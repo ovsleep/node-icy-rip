@@ -11,6 +11,8 @@ export interface Args {
     url: string;
     outputFolder: string;
     teeToStdout: boolean;
+    appendDate: boolean;
+    name: string
 }
 
 export interface TrackInfo {
@@ -54,9 +56,18 @@ function matches(track: TrackInfo, filters: Filter[]): boolean {
     return true;
 }
 
-export function main(args?: Args) {
-    args = args || parseProcessArgs();
+function padLeft(num: number, paddingValue:string): string{
+    return String(paddingValue + num).slice(-paddingValue.length);
+}
 
+function getDateStr(){
+    var date = new Date();
+    return `_${date.getFullYear()}${padLeft(date.getMonth()+1, '00')}${padLeft(date.getDate(),'00')}`
+}
+
+export function main(args?: Args) {
+    args =  parseProcessArgs();
+    console.log(args);
     if (!args) {
         log('Usage: icy-rip <url> [optional output folder][-t writes audio data to stdout]');
         return;
@@ -68,7 +79,6 @@ export function main(args?: Args) {
     const writeToStdout: (data: any) => void = args.teeToStdout ? data => process.stdout.write(data) : doNothing;
     const progressTask: (msg: string) => void = args.teeToStdout ? doNothing : progress.task;
     const filters = loadFilters();
-
     if (args.teeToStdout) {
         process.stdout.on('error', doNothing);
     }
@@ -105,6 +115,9 @@ export function main(args?: Args) {
 
             res.on('metadata', function(metadata: any) { // do not =>
                 const meta = icecast.parse(metadata);
+
+                log(`META******`);
+                log(meta);
                 const newTitle = meta.StreamTitle;
                 let trackNumberOffset = 0;
                 if (outFile && outFile.streamTitle !== newTitle) {
@@ -130,7 +143,14 @@ export function main(args?: Args) {
 
                 if (doOutput) {
                     if (!outFile) {
-                        outFile = new output.File(args.outputFolder, 0, album, genre, '');
+
+                        let newTitle = args.name || '';
+                        if(args.appendDate){
+                            let date = new Date();
+                            let dateStr = getDateStr()
+                            newTitle = `${newTitle}_${dateStr}`
+                        }
+                        outFile = new output.File(args.outputFolder, 0, album, genre, newTitle);
                         outFile.isInitialFileWithoutMetadata = true;
                     }
 
@@ -156,19 +176,24 @@ export function main(args?: Args) {
 interface Parsed {
     args: string[];
     tee: boolean;
+    appendDate: boolean;
 }
 
 function findTee(args: string[]): Parsed {
     const all: string[] = [];
     let tee = false;
+    let date = false;
     args.forEach(it => {
         if (it === '-t') {
             tee = true;
-        } else {
+        } else if (it == '-d'){
+            date = true;
+        }
+        else {
             all.push(it);
         }
     });
-    return { args: all, tee: tee };
+    return { args: all, tee: tee, appendDate: date };
 }
 
 export function parseProcessArgs(): Args {
@@ -185,8 +210,9 @@ export function parseProcessArgs(): Args {
             fs.mkdirSync(folder);
         }
     }
+    let name = args[4];
 
-    return { url: args[2], outputFolder: folder, teeToStdout: parsed.tee };
+    return { url: args[2], outputFolder: folder, teeToStdout: parsed.tee, name: name, appendDate: parsed.appendDate };
 }
 
 function formatHeaders(headers: any): string {
